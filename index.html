@@ -75,7 +75,40 @@
                 <h2 class="text-md font-semibold text-slate-700">Zone Availability</h2>
                 <button onclick="resetAllZones()" class="text-xs bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium px-2 py-1 rounded transition">↺ Reset All Zones</button>
             </div>
-            <div id="zoneOverview" class="grid grid-cols-2 gap-2 text-xs"></div>
+            <p class="text-[10px] text-slate-400 mb-1.5">Tap an occupied pallet to release it.</p>
+            <div id="zoneOverview" class="space-y-2 text-xs"></div>
+        </div>
+
+        <!-- Move / Relocate a batch -->
+        <div class="pt-4 border-t border-slate-200">
+            <h2 class="text-md font-semibold text-slate-700 mb-2">🔀 Move / Relocate a Batch</h2>
+            <div class="space-y-2 bg-blue-50 border border-blue-100 rounded-md p-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Currently Tracked Item</label>
+                    <select id="moveSourceSelect" onchange="onMoveSourceChange()" class="w-full p-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-blue-500">
+                        <option value="" disabled selected>-- Select batch/container to move --</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Destination Zone</label>
+                    <select id="moveZoneSelect" onchange="renderMovePalletOptions()" class="w-full p-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-blue-500">
+                        <option value="" disabled selected>-- Choose Zone --</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Destination Pallet</label>
+                    <select id="movePalletSelect" class="w-full p-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-blue-500">
+                        <option value="" disabled selected>-- Choose Pallet --</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Personnel Name / ID</label>
+                    <input type="text" id="moveOperatorInput" placeholder="Personnel ID or Name" class="w-full p-2 border border-slate-300 rounded-md text-sm focus:outline-blue-500">
+                </div>
+                <button id="moveBtn" onclick="moveBatch()" class="w-full bg-blue-600 text-white font-bold py-2.5 rounded-md hover:bg-blue-700 transition shadow">
+                    Confirm Move
+                </button>
+            </div>
         </div>
 
         <!-- Search by Batch -->
@@ -98,10 +131,12 @@
                 <table class="w-full text-xs text-left text-slate-600">
                     <thead class="bg-slate-100 text-slate-700 sticky top-0">
                         <tr>
+                            <th class="p-2">Type</th>
                             <th class="p-2">Batch</th>
                             <th class="p-2">Container</th>
                             <th class="p-2">Zone</th>
                             <th class="p-2">Pallet</th>
+                            <th class="p-2">Details</th>
                             <th class="p-2">Time</th>
                         </tr>
                     </thead>
@@ -132,6 +167,7 @@
 
         let db;
         let zonesData = {};   // { "Zone A": { pallets: [false,false,true,false] }, ... }
+        let occupancyData = {}; // { occKey: {batch, container, zone, palletNumber} } — who's in every slot, live
         let logs = [];        // movements, newest first
         let html5QrCode;
 
@@ -143,6 +179,7 @@
                 ensureZonesExist();
                 listenToZones();
                 listenToMovements();
+                listenToOccupancy();
             } catch (err) {
                 setConnStatus('Setup needed: paste your Firebase config in the code (see comments).', 'error');
                 console.error(err);
@@ -189,6 +226,8 @@
                 snapshot.forEach(doc => { zonesData[doc.id] = doc.data(); });
                 renderZoneSelect();
                 renderZoneOverview();
+                renderMoveZoneOptions();
+                if (document.getElementById('moveZoneSelect').value) renderMovePalletOptions();
                 // Data arrived successfully — clear any earlier "no zones found" error
                 // that may have been shown from a transient empty snapshot on load.
                 setConnStatus('Connected — data is live and shared with all devices', 'ok');
@@ -202,6 +241,8 @@
                 logs = snapshot.docs.map(d => {
                     const data = d.data();
                     return {
+                        type: data.type || 'Entry',
+                        details: data.details || '',
                         batch: data.batch || '',
                         container: data.container || '',
                         zone: data.zone || '',
@@ -213,6 +254,21 @@
                 renderLogs();
                 searchBatch();
               }, err => setConnStatus('Connection error: ' + err.message, 'error'));
+        }
+
+        // Live-updates who's occupying every pallet — powers the per-pallet batch
+        // display in Zone Availability and the "Move" panel's source dropdown.
+        function listenToOccupancy() {
+            db.collection('occupancy').onSnapshot(snapshot => {
+                occupancyData = {};
+                snapshot.forEach(doc => { occupancyData[doc.id] = doc.data(); });
+                renderZoneOverview();
+                renderMoveSourceOptions();
+            }, err => setConnStatus('Connection error: ' + err.message, 'error'));
+        }
+
+        function findOccupant(zoneName, palletNum) {
+            return Object.values(occupancyData).find(o => o.zone === zoneName && o.palletNumber === palletNum);
         }
 
         // ---------- Zone dropdown: only show zones with free pallets ----------
@@ -264,39 +320,52 @@
             }
         }
 
-        // ---------- Zone overview cards ----------
+        // ---------- Zone overview: per-pallet grid showing batch numbers ----------
         function renderZoneOverview() {
             const container = document.getElementById('zoneOverview');
             container.innerHTML = '';
             ZONE_NAMES.forEach(zoneName => {
                 const zone = zonesData[zoneName];
-                const card = document.createElement('div');
+                const panel = document.createElement('div');
 
                 if (!zone || !Array.isArray(zone.pallets)) {
                     // Malformed or missing doc — show it instead of silently dropping it,
                     // so the whole overview doesn't vanish because of one bad zone.
                     if (zone) console.warn(`Zone "${zoneName}" has malformed pallets data:`, zone.pallets);
-                    card.className = 'p-2 rounded-md border text-center bg-amber-50 border-amber-200 text-amber-700';
-                    card.innerHTML = `
-                        <div class="font-semibold">${zoneName}</div>
-                        <div>Data error</div>
-                    `;
-                    container.appendChild(card);
+                    panel.className = 'p-2 rounded-md border bg-amber-50 border-amber-200 text-amber-700';
+                    panel.innerHTML = `<div class="font-semibold">${zoneName} — Data error</div>`;
+                    container.appendChild(panel);
                     return;
                 }
 
                 const free = zone.pallets.filter(p => p === false).length;
                 const isFull = free === 0;
-                card.className = `p-2 rounded-md border text-center cursor-pointer hover:opacity-80 transition ${
-                    isFull ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                }`;
-                card.innerHTML = `
-                    <div class="font-semibold">${zoneName}</div>
-                    <div>${isFull ? 'FULL' : free + ' / ' + PALLETS_PER_ZONE + ' free'}</div>
+
+                let slotsHtml = '';
+                for (let i = 0; i < PALLETS_PER_ZONE; i++) {
+                    const palletNum = i + 1;
+                    const occupied = zone.pallets[i];
+                    const occ = occupied ? findOccupant(zoneName, palletNum) : null;
+                    const label = occupied ? (occ ? escapeHtml(occ.batch) : '⚠ unknown') : 'Empty';
+                    const clickAttr = occupied ? ` onclick="releaseSpecificPallet('${zoneName.replace(/'/g, "\\'")}', ${palletNum})"` : '';
+                    slotsHtml += `
+                        <div class="p-1.5 rounded text-center border ${
+                            occupied ? 'bg-rose-50 border-rose-200 text-rose-700 cursor-pointer hover:bg-rose-100' : 'bg-emerald-50 border-emerald-100 text-emerald-500'
+                        }" title="${occupied ? 'Tap to release this pallet' : 'Empty'}"${clickAttr}>
+                            <div class="text-[9px] opacity-70">P${palletNum}</div>
+                            <div class="font-medium truncate">${label}</div>
+                        </div>`;
+                }
+
+                panel.className = 'p-2 rounded-md border bg-slate-50 border-slate-200';
+                panel.innerHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-semibold text-slate-700">${zoneName}</span>
+                        <span class="text-[10px] font-medium ${isFull ? 'text-rose-600' : 'text-emerald-600'}">${isFull ? 'FULL' : free + ' / ' + PALLETS_PER_ZONE + ' free'}</span>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1">${slotsHtml}</div>
                 `;
-                card.title = 'Click to release a pallet (container left this zone)';
-                card.onclick = () => releasePalletPrompt(zoneName);
-                container.appendChild(card);
+                container.appendChild(panel);
             });
         }
 
@@ -309,7 +378,27 @@
             );
             if (!confirmed) return;
 
+            const releasedBy = prompt('Your name / ID (for the reset record):') || 'Unknown';
+
             try {
+                // Log a Release event for everything that was occupied, BEFORE wiping it,
+                // so the audit trail shows exactly what was cleared and when.
+                const occSnap = await db.collection('occupancy').get();
+                if (!occSnap.empty) {
+                    const logBatch = db.batch();
+                    occSnap.forEach(doc => {
+                        const occ = doc.data();
+                        const logRef = db.collection('movements').doc();
+                        logBatch.set(logRef, {
+                            type: 'Release', details: `Cleared by bulk "Reset All Zones"`,
+                            batch: occ.batch || '', container: occ.container || '', zone: occ.zone || '',
+                            operator: releasedBy, palletNumber: occ.palletNumber || '',
+                            time: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    });
+                    await logBatch.commit();
+                }
+
                 const batchOp = db.batch();
                 ZONE_NAMES.forEach(zoneName => {
                     const ref = db.collection('zones').doc(zoneName);
@@ -318,7 +407,6 @@
                 await batchOp.commit();
 
                 // Clear occupancy tracking too, since those slots no longer exist.
-                const occSnap = await db.collection('occupancy').get();
                 if (!occSnap.empty) {
                     const delBatch = db.batch();
                     occSnap.forEach(doc => delBatch.delete(doc.ref));
@@ -331,30 +419,13 @@
             }
         }
 
-        // ---------- Manually release a pallet slot (container physically left) ----------
-        async function releasePalletPrompt(zoneName) {
-            const zone = zonesData[zoneName];
-            if (!zone || !Array.isArray(zone.pallets)) return;
+        // ---------- Release a specific pallet slot (container physically left) ----------
+        async function releaseSpecificPallet(zoneName, palletNum) {
+            const occ = findOccupant(zoneName, palletNum);
+            const label = occ ? `${occ.batch} / ${occ.container}` : `Pallet ${palletNum}`;
+            if (!confirm(`Release ${label} from ${zoneName}, Pallet ${palletNum}?`)) return;
 
-            const occupied = zone.pallets
-                .map((val, i) => ({ num: i + 1, occupied: val }))
-                .filter(p => p.occupied)
-                .map(p => p.num);
-
-            if (occupied.length === 0) {
-                alert(`${zoneName} has no occupied pallets to release.`);
-                return;
-            }
-
-            const input = prompt(
-                `${zoneName} — occupied pallets: ${occupied.join(', ')}\n\nEnter the pallet number to release (mark empty):`
-            );
-            if (input === null) return;
-            const palletNum = parseInt(input.trim(), 10);
-            if (!Number.isInteger(palletNum) || palletNum < 1 || palletNum > PALLETS_PER_ZONE) {
-                alert('Invalid pallet number.');
-                return;
-            }
+            const releasedBy = prompt('Your name / ID (for the release record):') || 'Unknown';
 
             try {
                 await db.runTransaction(async (t) => {
@@ -366,14 +437,174 @@
                     pallets[palletNum - 1] = false;
                     t.update(zoneRef, { pallets });
                 });
-                // Clean up any occupancy record pointing at this exact slot.
+
+                // Find who was occupying this exact slot, so the release record shows
+                // which batch/container left — then clean up its occupancy record.
                 const occSnap = await db.collection('occupancy')
                     .where('zone', '==', zoneName)
                     .where('palletNumber', '==', palletNum)
                     .get();
-                occSnap.forEach(doc => doc.ref.delete());
+
+                if (occSnap.empty) {
+                    await db.collection('movements').add({
+                        type: 'Release', details: `Pallet ${palletNum} manually released (no matching entry record found)`,
+                        batch: '', container: '', zone: zoneName, operator: releasedBy,
+                        palletNumber: palletNum,
+                        time: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else {
+                    for (const doc of occSnap.docs) {
+                        const o = doc.data();
+                        await db.collection('movements').add({
+                            type: 'Release', details: `Container left ${zoneName}, Pallet ${palletNum}`,
+                            batch: o.batch || '', container: o.container || '', zone: zoneName, operator: releasedBy,
+                            palletNumber: palletNum,
+                            time: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        await doc.ref.delete();
+                    }
+                }
             } catch (err) {
                 alert('Could not release pallet: ' + err.message);
+            }
+        }
+
+        // ---------- Move / relocate a currently tracked batch ----------
+        function renderMoveSourceOptions() {
+            const select = document.getElementById('moveSourceSelect');
+            const previousValue = select.value;
+            select.innerHTML = '<option value="" disabled selected>-- Select batch/container to move --</option>';
+            Object.entries(occupancyData)
+                .sort((a, b) => (a[1].batch || '').localeCompare(b[1].batch || ''))
+                .forEach(([key, occ]) => {
+                    const opt = document.createElement('option');
+                    opt.value = key;
+                    opt.textContent = `${occ.batch} / ${occ.container} — in ${occ.zone}, Pallet ${occ.palletNumber}`;
+                    select.appendChild(opt);
+                });
+            if (previousValue && Array.from(select.options).some(o => o.value === previousValue)) {
+                select.value = previousValue;
+            }
+        }
+
+        function renderMoveZoneOptions() {
+            const select = document.getElementById('moveZoneSelect');
+            const previousValue = select.value;
+            select.innerHTML = '<option value="" disabled selected>-- Choose Zone --</option>';
+            ZONE_NAMES.forEach(zoneName => {
+                const zone = zonesData[zoneName];
+                const free = zone && Array.isArray(zone.pallets) ? zone.pallets.filter(p => p === false).length : 0;
+                const opt = document.createElement('option');
+                opt.value = zoneName;
+                opt.textContent = `${zoneName} (${free} free)`;
+                select.appendChild(opt);
+            });
+            if (previousValue && Array.from(select.options).some(o => o.value === previousValue)) {
+                select.value = previousValue;
+            }
+        }
+
+        function renderMovePalletOptions() {
+            const zoneName = document.getElementById('moveZoneSelect').value;
+            const palletSelect = document.getElementById('movePalletSelect');
+            palletSelect.innerHTML = '<option value="" disabled selected>-- Choose Pallet --</option>';
+            const zone = zonesData[zoneName];
+            if (!zone || !Array.isArray(zone.pallets)) return;
+            zone.pallets.forEach((occupied, i) => {
+                if (!occupied) {
+                    const opt = document.createElement('option');
+                    opt.value = i + 1;
+                    opt.textContent = `Pallet ${i + 1}`;
+                    palletSelect.appendChild(opt);
+                }
+            });
+            if (palletSelect.options.length <= 1) {
+                const opt = document.createElement('option');
+                opt.disabled = true;
+                opt.textContent = 'No free pallets in this zone';
+                palletSelect.appendChild(opt);
+            }
+        }
+
+        function onMoveSourceChange() {
+            document.getElementById('movePalletSelect').innerHTML = '<option value="" disabled selected>-- Choose Pallet --</option>';
+        }
+
+        async function moveBatch() {
+            const occKey = document.getElementById('moveSourceSelect').value;
+            const destZone = document.getElementById('moveZoneSelect').value;
+            const destPalletRaw = document.getElementById('movePalletSelect').value;
+            const operator = document.getElementById('moveOperatorInput').value.trim();
+
+            if (!occKey || !destZone || !destPalletRaw || !operator) {
+                alert('Please fill in all fields before moving.');
+                return;
+            }
+            const destPallet = parseInt(destPalletRaw, 10);
+
+            const moveBtn = document.getElementById('moveBtn');
+            moveBtn.disabled = true;
+            moveBtn.textContent = 'Moving...';
+
+            try {
+                let batch = '', container = '', prevZone = '', prevPallet = null;
+
+                await db.runTransaction(async (t) => {
+                    const occRef = db.collection('occupancy').doc(occKey);
+                    const occDoc = await t.get(occRef);
+                    if (!occDoc.exists) throw new Error('This item is no longer tracked (it may have already moved or been released). Please refresh and try again.');
+                    const occ = occDoc.data();
+                    batch = occ.batch; container = occ.container; prevZone = occ.zone; prevPallet = occ.palletNumber;
+
+                    if (prevZone === destZone && prevPallet === destPallet) {
+                        throw new Error('That is already its current location.');
+                    }
+
+                    const sameZone = (prevZone === destZone);
+                    const destZoneRef = db.collection('zones').doc(destZone);
+                    const destZoneDoc = await t.get(destZoneRef);
+                    if (!destZoneDoc.exists) throw new Error('Destination zone not found.');
+
+                    const prevZoneRef = sameZone ? destZoneRef : db.collection('zones').doc(prevZone);
+                    const prevZoneDoc = sameZone ? destZoneDoc : await t.get(prevZoneRef);
+
+                    const destPallets = destZoneDoc.data().pallets;
+                    if (destPallets[destPallet - 1]) throw new Error('That destination pallet just became occupied by someone else. Please choose another.');
+
+                    destPallets[destPallet - 1] = true;
+                    if (sameZone) {
+                        if (prevPallet >= 1 && prevPallet <= destPallets.length) destPallets[prevPallet - 1] = false;
+                        t.update(destZoneRef, { pallets: destPallets });
+                    } else {
+                        t.update(destZoneRef, { pallets: destPallets });
+                        if (prevZoneDoc && prevZoneDoc.exists) {
+                            const prevPallets = prevZoneDoc.data().pallets;
+                            if (prevPallet >= 1 && prevPallet <= prevPallets.length) {
+                                prevPallets[prevPallet - 1] = false;
+                                t.update(prevZoneRef, { pallets: prevPallets });
+                            }
+                        }
+                    }
+
+                    t.update(occRef, { zone: destZone, palletNumber: destPallet });
+                });
+
+                await db.collection('movements').add({
+                    type: 'Move', details: `Moved from ${prevZone} (Pallet ${prevPallet}) to ${destZone} (Pallet ${destPallet})`,
+                    batch, container, zone: destZone, operator,
+                    palletNumber: destPallet,
+                    time: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                document.getElementById('moveSourceSelect').selectedIndex = 0;
+                document.getElementById('moveZoneSelect').selectedIndex = 0;
+                document.getElementById('movePalletSelect').innerHTML = '<option value="" disabled selected>-- Choose Pallet --</option>';
+                document.getElementById('moveOperatorInput').value = '';
+            } catch (err) {
+                alert('Could not move: ' + err.message);
+            } finally {
+                moveBtn.disabled = false;
+                moveBtn.textContent = 'Confirm Move';
             }
         }
 
@@ -460,6 +691,8 @@
 
             try {
                 let assignedPallet = null;
+                let movementType = 'Entry';
+                let movementDetails = 'New arrival';
                 const occKey = occupancyKey(batch, container);
                 const occRef = db.collection('occupancy').doc(occKey);
 
@@ -494,11 +727,15 @@
                             prevPallets[prev.palletNumber - 1] = false;
                             t.update(prevZoneRef, { pallets: prevPallets });
                         }
+                        movementType = 'Move';
+                        movementDetails = `Moved from ${prev.zone} (Pallet ${prev.palletNumber}) to ${zone} (Pallet ${assignedPallet})`;
                     } else if (prev && prev.zone === zone) {
                         // Same zone re-scan: free the old slot too, since we just took a new one.
                         if (prev.palletNumber >= 1 && prev.palletNumber <= newPallets.length && prev.palletNumber !== assignedPallet) {
                             newPallets[prev.palletNumber - 1] = false;
                             t.update(newZoneRef, { pallets: newPallets });
+                            movementType = 'Move';
+                            movementDetails = `Re-assigned within ${zone}: Pallet ${prev.palletNumber} → Pallet ${assignedPallet}`;
                         }
                     }
 
@@ -506,6 +743,7 @@
                 });
 
                 await db.collection('movements').add({
+                    type: movementType, details: movementDetails,
                     batch, container, zone, operator,
                     palletNumber: assignedPallet,
                     time: firebase.firestore.FieldValue.serverTimestamp()
@@ -534,14 +772,22 @@
         function renderLogs() {
             const tbody = document.getElementById('logTableBody');
             tbody.innerHTML = '';
+            const typeStyles = {
+                'Entry': 'bg-emerald-100 text-emerald-700',
+                'Move': 'bg-blue-100 text-blue-700',
+                'Release': 'bg-rose-100 text-rose-700'
+            };
             logs.forEach(log => {
                 const row = document.createElement('tr');
                 row.className = 'border-t border-slate-100';
+                const badgeClass = typeStyles[log.type] || 'bg-slate-100 text-slate-600';
                 row.innerHTML = `
+                    <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${badgeClass}">${escapeHtml(log.type)}</span></td>
                     <td class="p-2">${escapeHtml(log.batch)}</td>
                     <td class="p-2">${escapeHtml(log.container)}</td>
                     <td class="p-2">${escapeHtml(log.zone)}</td>
                     <td class="p-2">${escapeHtml(String(log.palletNumber))}</td>
+                    <td class="p-2 text-slate-500">${escapeHtml(log.details)}</td>
                     <td class="p-2">${escapeHtml(log.time)}</td>
                 `;
                 tbody.appendChild(row);
@@ -578,17 +824,33 @@
 
             const latest = matches[0]; // logs are already newest-first
             resultBox.classList.remove('hidden');
-            resultBox.innerHTML = `
-                <div class="bg-emerald-50 border border-emerald-200 p-2.5 rounded-md">
-                    <p class="text-xs text-emerald-700">
-                        Batch <span class="font-bold">${escapeHtml(latest.batch)}</span> was last seen in
-                        <span class="font-bold">${escapeHtml(latest.zone)}</span>, Pallet ${escapeHtml(String(latest.palletNumber))}
-                    </p>
-                    <p class="text-[11px] text-emerald-600 mt-0.5">
-                        Container: ${escapeHtml(latest.container)} • ${escapeHtml(latest.time)} • Logged by ${escapeHtml(latest.operator)}
-                    </p>
-                    ${matches.length > 1 ? `<p class="text-[11px] text-emerald-500 mt-1">${matches.length} total movements found for this batch</p>` : ''}
-                </div>`;
+
+            if (latest.type === 'Release') {
+                resultBox.innerHTML = `
+                    <div class="bg-rose-50 border border-rose-200 p-2.5 rounded-md">
+                        <p class="text-xs text-rose-700">
+                            Batch <span class="font-bold">${escapeHtml(latest.batch)}</span> was <span class="font-bold">released</span> from
+                            <span class="font-bold">${escapeHtml(latest.zone)}</span>, Pallet ${escapeHtml(String(latest.palletNumber))}
+                        </p>
+                        <p class="text-[11px] text-rose-600 mt-0.5">
+                            ${escapeHtml(latest.details)} • ${escapeHtml(latest.time)} • By ${escapeHtml(latest.operator)}
+                        </p>
+                        ${matches.length > 1 ? `<p class="text-[11px] text-rose-500 mt-1">${matches.length} total movements found for this batch</p>` : ''}
+                    </div>`;
+            } else {
+                resultBox.innerHTML = `
+                    <div class="bg-emerald-50 border border-emerald-200 p-2.5 rounded-md">
+                        <p class="text-xs text-emerald-700">
+                            Batch <span class="font-bold">${escapeHtml(latest.batch)}</span> is currently in
+                            <span class="font-bold">${escapeHtml(latest.zone)}</span>, Pallet ${escapeHtml(String(latest.palletNumber))}
+                        </p>
+                        <p class="text-[11px] text-emerald-600 mt-0.5">
+                            Container: ${escapeHtml(latest.container)} • ${escapeHtml(latest.time)} • Logged by ${escapeHtml(latest.operator)}
+                        </p>
+                        ${latest.type === 'Move' ? `<p class="text-[11px] text-blue-600 mt-1">${escapeHtml(latest.details)}</p>` : ''}
+                        ${matches.length > 1 ? `<p class="text-[11px] text-emerald-500 mt-1">${matches.length} total movements found for this batch</p>` : ''}
+                    </div>`;
+            }
         }
 
         // ---------- Export ----------
@@ -598,16 +860,18 @@
             doc.text('Corridor Container Tracker - Movement Log', 14, 15);
             doc.autoTable({
                 startY: 20,
-                head: [['Batch', 'Container', 'Zone', 'Pallet', 'Operator', 'Time']],
-                body: logs.map(l => [l.batch, l.container, l.zone, l.palletNumber, l.operator, l.time])
+                styles: { fontSize: 8 },
+                head: [['Type', 'Batch', 'Container', 'Zone', 'Pallet', 'Details', 'Time']],
+                body: logs.map(l => [l.type, l.batch, l.container, l.zone, l.palletNumber, l.details, l.time])
             });
             doc.save('container_log.pdf');
         }
 
         function exportCSV() {
-            let csv = 'Batch,Container,Zone,Pallet,Operator,Time\n';
+            let csv = 'Type,Batch,Container,Zone,Pallet,Details,Operator,Time\n';
             logs.forEach(l => {
-                csv += `${l.batch},${l.container},${l.zone},${l.palletNumber},${l.operator},${l.time}\n`;
+                const safe = (v) => `"${String(v).replace(/"/g, '""')}"`;
+                csv += `${safe(l.type)},${safe(l.batch)},${safe(l.container)},${safe(l.zone)},${safe(l.palletNumber)},${safe(l.details)},${safe(l.operator)},${safe(l.time)}\n`;
             });
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
