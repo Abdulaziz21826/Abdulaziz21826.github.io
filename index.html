@@ -132,12 +132,16 @@
 
         <!-- Recent Logs Table -->
         <div class="pt-4 border-t border-slate-200">
-            <div class="flex justify-between items-center mb-2">
+            <div class="flex justify-between items-center mb-2 flex-wrap gap-1">
                 <h2 class="text-md font-semibold text-[#0B1B33]">Recent Movements</h2>
                 <div class="space-x-1">
-                    <button onclick="exportPDF()" class="text-xs bg-red-600 hover:bg-red-700 text-white font-medium px-2.5 py-1 rounded shadow transition">📄 Export PDF</button>
-                    <button onclick="exportCSV()" class="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded text-slate-700">CSV</button>
+                    <button onclick="exportPDF()" class="text-xs bg-red-600 hover:bg-red-700 text-white font-medium px-2.5 py-1 rounded shadow transition">📄 PDF (last 300)</button>
+                    <button onclick="exportCSV()" class="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded text-slate-700">CSV (last 300)</button>
                 </div>
+            </div>
+            <div class="flex justify-end gap-1 mb-2">
+                <button id="fullHistoryPdfBtn" onclick="fullHistoryExportPDF()" class="text-xs bg-[#0B1B33] hover:bg-[#132644] text-white font-medium px-2.5 py-1 rounded shadow transition">📚 Full History (PDF)</button>
+                <button id="fullHistoryCsvBtn" onclick="fullHistoryExportCSV()" class="text-xs bg-[#0B1B33]/10 hover:bg-[#0B1B33]/20 text-[#0B1B33] font-medium px-2.5 py-1 rounded transition">Full History (CSV)</button>
             </div>
             <div class="max-h-52 overflow-y-auto border border-slate-200 rounded">
                 <table class="w-full text-xs text-left text-slate-600">
@@ -890,7 +894,8 @@
             });
         }
 
-        async function exportPDF() {
+        // Builds and downloads a branded PDF from any array of log-shaped records.
+        async function buildPDF(logsArray, filename) {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             const pageWidth = doc.internal.pageSize.getWidth();
@@ -899,60 +904,73 @@
             const GOLD = [242, 180, 41];     // #F2B429
             const CREAM = [245, 243, 239];   // #F5F3EF
 
-            // Explicit white page background
-            doc.setFillColor(255, 255, 255);
-            doc.rect(0, 0, pageWidth, pageHeight, 'F');
-
-            // Faint centered watermark logo
             const logo = await getLogoInfo();
-            if (logo) {
-                const wmWidth = pageWidth * 0.65;
-                const wmHeight = wmWidth * logo.aspect;
-                try {
-                    doc.saveGraphicsState();
-                    doc.setGState(new doc.GState({ opacity: 0.06 }));
-                    doc.addImage(logo.dataUrl, 'PNG', (pageWidth - wmWidth) / 2, (pageHeight - wmHeight) / 2, wmWidth, wmHeight);
-                    doc.restoreGraphicsState();
-                } catch (e) {
-                    console.warn('Watermark skipped:', e);
+
+            // Draws the watermark + top header logo on every page (called via didDrawPage below).
+            function drawPageChrome() {
+                doc.setFillColor(255, 255, 255);
+                doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+                if (logo) {
+                    const wmWidth = pageWidth * 0.65;
+                    const wmHeight = wmWidth * logo.aspect;
+                    try {
+                        doc.saveGraphicsState();
+                        doc.setGState(new doc.GState({ opacity: 0.16 }));
+                        doc.addImage(logo.dataUrl, 'PNG', (pageWidth - wmWidth) / 2, (pageHeight - wmHeight) / 2, wmWidth, wmHeight);
+                        doc.restoreGraphicsState();
+                    } catch (e) {
+                        console.warn('Watermark skipped:', e);
+                    }
+
+                    const headerHeight = 13;
+                    const headerWidth = headerHeight / logo.aspect;
+                    doc.addImage(logo.dataUrl, 'PNG', 14, 6, headerWidth, headerHeight);
+                    doc.setFont(undefined, 'normal');
+                    doc.setFontSize(9);
+                    doc.setTextColor(90, 90, 90);
+                    doc.text('Corridor Container Tracker — Movement Log', 14 + headerWidth + 4, 6 + headerHeight / 2 + 1.5);
+                } else {
+                    // Fallback if the logo image wasn't available to grab (e.g. not yet loaded on page)
+                    doc.setFont(undefined, 'bold');
+                    doc.setFontSize(16);
+                    doc.setTextColor(...NAVY);
+                    doc.text('EVA PHARMA', 14, 15);
+                    doc.setFont(undefined, 'normal');
+                    doc.setFontSize(10);
+                    doc.setTextColor(90, 90, 90);
+                    doc.text('Corridor Container Tracker — Movement Log', 14, 21);
                 }
+
+                doc.setDrawColor(...GOLD);
+                doc.setLineWidth(0.8);
+                doc.line(14, 22, pageWidth - 14, 22);
             }
 
-            // Brand header
-            doc.setFont(undefined, 'bold');
-            doc.setFontSize(16);
-            doc.setTextColor(...NAVY);
-            doc.text('EVA PHARMA', 14, 15);
-            doc.setFont(undefined, 'normal');
-            doc.setFontSize(10);
-            doc.setTextColor(90, 90, 90);
-            doc.text('Corridor Container Tracker — Movement Log', 14, 21);
-            doc.setDrawColor(...GOLD);
-            doc.setLineWidth(0.8);
-            doc.line(14, 24, pageWidth - 14, 24);
-
             doc.autoTable({
-                startY: 29,
+                startY: 27,
+                margin: { top: 27 },
                 styles: { fontSize: 8, textColor: [30, 41, 59] },
                 headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold' },
                 alternateRowStyles: { fillColor: CREAM },
                 head: [['Type', 'Batch', 'Container', 'Zone', 'Pallet', 'Details', 'Time']],
-                body: logs.map(l => [l.type, l.batch, l.container, l.zone, l.palletNumber, l.details, l.time]),
+                body: logsArray.map(l => [l.type, l.batch, l.container, l.zone, l.palletNumber, l.details, l.time]),
                 didParseCell: function (data) {
                     if (data.section === 'body' && data.column.index === 0) {
                         if (data.cell.raw === 'Entry') data.cell.styles.textColor = [4, 120, 87];
                         else if (data.cell.raw === 'Move') data.cell.styles.textColor = NAVY;
                         else if (data.cell.raw === 'Release') data.cell.styles.textColor = [190, 18, 60];
                     }
-                }
+                },
+                didDrawPage: drawPageChrome
             });
 
-            doc.save('container_log.pdf');
+            doc.save(filename);
         }
 
-        function exportCSV() {
+        function buildCSV(logsArray, filename) {
             let csv = 'Type,Batch,Container,Zone,Pallet,Details,Operator,Time\n';
-            logs.forEach(l => {
+            logsArray.forEach(l => {
                 const safe = (v) => `"${String(v).replace(/"/g, '""')}"`;
                 csv += `${safe(l.type)},${safe(l.batch)},${safe(l.container)},${safe(l.zone)},${safe(l.palletNumber)},${safe(l.details)},${safe(l.operator)},${safe(l.time)}\n`;
             });
@@ -960,9 +978,71 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'container_log.csv';
+            a.download = filename;
             a.click();
             URL.revokeObjectURL(url);
+        }
+
+        // Converts a raw Firestore movements doc into the same shape used on-screen.
+        function shapeMovementDoc(d) {
+            const data = d.data();
+            return {
+                type: data.type || 'Entry',
+                details: data.details || '',
+                batch: data.batch || '',
+                container: data.container || '',
+                zone: data.zone || '',
+                operator: data.operator || '',
+                palletNumber: data.palletNumber || '',
+                time: data.time && data.time.toDate ? data.time.toDate().toLocaleString() : 'Just now'
+            };
+        }
+
+        // ---------- Exports of the on-screen list (most recent 300) ----------
+        function exportPDF() {
+            buildPDF(logs, 'container_log_recent300.pdf');
+        }
+
+        function exportCSV() {
+            buildCSV(logs, 'container_log_recent300.csv');
+        }
+
+        // ---------- Full history exports (fetches EVERY movement, no cap) ----------
+        async function fetchAllMovements() {
+            const snapshot = await db.collection('movements').orderBy('time', 'desc').get();
+            return snapshot.docs.map(shapeMovementDoc);
+        }
+
+        async function fullHistoryExportPDF() {
+            const btn = document.getElementById('fullHistoryPdfBtn');
+            const original = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Loading full history...';
+            try {
+                const allLogs = await fetchAllMovements();
+                await buildPDF(allLogs, 'container_log_FULL_HISTORY.pdf');
+            } catch (err) {
+                alert('Could not export full history: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = original;
+            }
+        }
+
+        async function fullHistoryExportCSV() {
+            const btn = document.getElementById('fullHistoryCsvBtn');
+            const original = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+            try {
+                const allLogs = await fetchAllMovements();
+                buildCSV(allLogs, 'container_log_FULL_HISTORY.csv');
+            } catch (err) {
+                alert('Could not export full history: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = original;
+            }
         }
 
         // Boot the app
