@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -118,12 +119,12 @@
         // Get it from: Firebase Console → Project Settings → Your apps → Web app
         // =====================================================================
         const firebaseConfig = {
-            apiKey: "AIzaSyAYiU9DWGd1CROQ4b-V8tmaoArYroer1_s",
-            authDomain: "batch-tracker-a13ad.firebaseapp.com",
-            projectId: "batch-tracker-a13ad",
-            storageBucket: "batch-tracker-a13ad.firebasestorage.app",
-            messagingSenderId: "398602563823",
-            appId: "1:398602563823:web:0467d47b9f2eb661ef2b1a"
+            apiKey: "AIzaSyASrlD1uJsfpKW8kFC_4xNG8a5G4w6-UT0",
+            authDomain: "batch-tracker-v2.firebaseapp.com",
+            projectId: "batch-tracker-v2",
+            storageBucket: "batch-tracker-v2.firebasestorage.app",
+            messagingSenderId: "959576555579",
+            appId: "1:959576555579:web:3c6f12749740186cac9c1e"
         };
 
         const ZONE_NAMES = ['Zone A', 'Zone B', 'Zone C', 'Zone D', 'Zone E', 'Zone F'];
@@ -188,6 +189,9 @@
                 snapshot.forEach(doc => { zonesData[doc.id] = doc.data(); });
                 renderZoneSelect();
                 renderZoneOverview();
+                // Data arrived successfully — clear any earlier "no zones found" error
+                // that may have been shown from a transient empty snapshot on load.
+                setConnStatus('Connected — data is live and shared with all devices', 'ok');
             }, err => setConnStatus('Connection error: ' + err.message, 'error'));
         }
 
