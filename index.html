@@ -5,7 +5,7 @@
     <meta name="robots" content="noindex, nofollow">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pharma Batch & Container Tracker</title>
+    <title>EVA PHARMA — Corridor Container Tracker</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Camera QR Scanner -->
@@ -17,10 +17,22 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
-<body class="bg-slate-100 text-slate-800 font-sans p-4 min-h-screen">
+<body class="bg-white text-slate-800 font-sans p-4 min-h-screen relative overflow-x-hidden">
 
-    <div class="max-w-md mx-auto bg-white rounded-xl shadow-md p-6 space-y-4">
-        <h1 class="text-xl font-bold text-slate-900 border-b pb-2">Corridor Container Tracker</h1>
+    <!-- Faint watermark logo behind the whole page -->
+    <img src="eva-pharma-logo.png" alt=""
+         class="pointer-events-none select-none fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[140%] max-w-3xl opacity-[0.05] z-0"
+         onerror="this.remove();">
+
+    <!-- Company header -->
+    <div class="max-w-md mx-auto mb-4 flex flex-col items-center gap-2 relative z-10">
+        <img id="companyLogo" src="eva-pharma-logo.png" alt="EVA PHARMA" class="h-40 w-auto"
+             onerror="this.onerror=null; this.replaceWith(Object.assign(document.createElement('span'), {textContent:'EVA PHARMA', className:'text-lg font-extrabold tracking-wide text-[#0B1B33]'}));">
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-[#8a6708] bg-[#F2B429]/15 border border-[#F2B429]/50 px-2.5 py-1 rounded-full">Corridor Tracker</span>
+    </div>
+
+    <div class="max-w-md mx-auto bg-[#F5F3EF] rounded-2xl shadow-xl p-6 space-y-4 relative z-10">
+        <h1 class="text-xl font-bold text-[#0B1B33] border-b border-[#0B1B33]/10 pb-2">Corridor Container Tracker</h1>
 
         <!-- Connection status -->
         <div id="connStatus" class="text-xs text-center py-1.5 rounded-md bg-slate-100 text-slate-500">
@@ -28,10 +40,10 @@
         </div>
 
         <!-- Camera Scanner Area -->
-        <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+        <div class="bg-white p-3 rounded-lg border border-slate-200">
             <div id="reader" class="w-full rounded-lg overflow-hidden"></div>
             <p id="scan-status" class="text-xs text-slate-500 text-center mt-1 hidden"></p>
-            <button id="start-scan-btn" onclick="startScanner()" class="w-full mt-2 bg-blue-600 text-white font-medium py-2 rounded-md hover:bg-blue-700 transition">
+            <button id="start-scan-btn" onclick="startScanner()" class="w-full mt-2 bg-[#0B1B33] text-white font-medium py-2 rounded-md hover:bg-[#132644] transition">
                 📷 Open Camera / Scan Container QR
             </button>
             <button id="stop-scan-btn" onclick="stopScanner()" class="w-full mt-2 bg-rose-600 text-white font-medium py-2 rounded-md hidden">
@@ -43,7 +55,7 @@
         <div class="space-y-3">
             <div>
                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">1. Select Zone</label>
-                <select id="zoneSelect" class="w-full p-2.5 bg-white border border-slate-300 rounded-md focus:outline-blue-500 font-medium text-slate-700">
+                <select id="zoneSelect" class="w-full p-2.5 bg-white border border-slate-300 rounded-md focus:outline-[#F2B429] font-medium text-slate-700">
                     <option value="" disabled selected>Loading zones...</option>
                 </select>
                 <p id="zoneHint" class="text-[11px] text-slate-400 mt-1"></p>
@@ -51,20 +63,20 @@
 
             <div>
                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">2. Batch Number</label>
-                <input type="text" id="batchInput" placeholder="Scan or enter Batch Number" class="w-full p-2 border border-slate-300 rounded-md focus:outline-blue-500">
+                <input type="text" id="batchInput" placeholder="Scan or enter Batch Number" class="w-full p-2 border border-slate-300 rounded-md focus:outline-[#F2B429]">
             </div>
 
             <div>
                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">3. Container Number</label>
-                <input type="text" id="containerInput" placeholder="e.g. Container 3 of 7 or 3/7" class="w-full p-2 border border-slate-300 rounded-md focus:outline-blue-500">
+                <input type="text" id="containerInput" placeholder="e.g. Container 3 of 7 or 3/7" class="w-full p-2 border border-slate-300 rounded-md focus:outline-[#F2B429]">
             </div>
 
             <div>
                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">4. Personnel Name / ID</label>
-                <input type="text" id="operatorInput" placeholder="Personnel ID or Name" class="w-full p-2 border border-slate-300 rounded-md focus:outline-blue-500">
+                <input type="text" id="operatorInput" placeholder="Personnel ID or Name" class="w-full p-2 border border-slate-300 rounded-md focus:outline-[#F2B429]">
             </div>
 
-            <button id="confirmBtn" onclick="logMovement()" class="w-full bg-emerald-600 text-white font-bold py-2.5 rounded-md hover:bg-emerald-700 transition shadow">
+            <button id="confirmBtn" onclick="logMovement()" class="w-full bg-[#F2B429] text-[#0B1B33] font-bold py-2.5 rounded-full hover:bg-[#e0a71f] transition shadow">
                 Confirm & Log Container
             </button>
         </div>
@@ -72,8 +84,8 @@
         <!-- Zone occupancy overview -->
         <div class="pt-4 border-t border-slate-200">
             <div class="flex justify-between items-center mb-2">
-                <h2 class="text-md font-semibold text-slate-700">Zone Availability</h2>
-                <button onclick="resetAllZones()" class="text-xs bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium px-2 py-1 rounded transition">↺ Reset All Zones</button>
+                <h2 class="text-md font-semibold text-[#0B1B33]">Zone Availability</h2>
+                <button onclick="resetAllZones()" class="text-xs bg-[#F2B429]/15 hover:bg-[#F2B429]/25 text-[#8a6708] font-medium px-2 py-1 rounded transition">↺ Reset All Zones</button>
             </div>
             <p class="text-[10px] text-slate-400 mb-1.5">Tap an occupied pallet to release it.</p>
             <div id="zoneOverview" class="space-y-2 text-xs"></div>
@@ -81,31 +93,31 @@
 
         <!-- Move / Relocate a batch -->
         <div class="pt-4 border-t border-slate-200">
-            <h2 class="text-md font-semibold text-slate-700 mb-2">🔀 Move / Relocate a Batch</h2>
-            <div class="space-y-2 bg-blue-50 border border-blue-100 rounded-md p-3">
+            <h2 class="text-md font-semibold text-[#0B1B33] mb-2">🔀 Move / Relocate a Batch</h2>
+            <div class="space-y-2 bg-[#0B1B33]/5 border border-[#0B1B33]/10 rounded-md p-3">
                 <div>
                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Currently Tracked Item</label>
-                    <select id="moveSourceSelect" onchange="onMoveSourceChange()" class="w-full p-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-blue-500">
+                    <select id="moveSourceSelect" onchange="onMoveSourceChange()" class="w-full p-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-[#F2B429]">
                         <option value="" disabled selected>-- Select batch/container to move --</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Destination Zone</label>
-                    <select id="moveZoneSelect" onchange="renderMovePalletOptions()" class="w-full p-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-blue-500">
+                    <select id="moveZoneSelect" onchange="renderMovePalletOptions()" class="w-full p-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-[#F2B429]">
                         <option value="" disabled selected>-- Choose Zone --</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Destination Pallet</label>
-                    <select id="movePalletSelect" class="w-full p-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-blue-500">
+                    <select id="movePalletSelect" class="w-full p-2 bg-white border border-slate-300 rounded-md text-sm focus:outline-[#F2B429]">
                         <option value="" disabled selected>-- Choose Pallet --</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Personnel Name / ID</label>
-                    <input type="text" id="moveOperatorInput" placeholder="Personnel ID or Name" class="w-full p-2 border border-slate-300 rounded-md text-sm focus:outline-blue-500">
+                    <input type="text" id="moveOperatorInput" placeholder="Personnel ID or Name" class="w-full p-2 border border-slate-300 rounded-md text-sm focus:outline-[#F2B429]">
                 </div>
-                <button id="moveBtn" onclick="moveBatch()" class="w-full bg-blue-600 text-white font-bold py-2.5 rounded-md hover:bg-blue-700 transition shadow">
+                <button id="moveBtn" onclick="moveBatch()" class="w-full bg-[#0B1B33] text-white font-bold py-2.5 rounded-full hover:bg-[#132644] transition shadow">
                     Confirm Move
                 </button>
             </div>
@@ -114,14 +126,14 @@
         <!-- Search by Batch -->
         <div class="pt-4 border-t border-slate-200">
             <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Search Batch → Last Known Zone</label>
-            <input type="text" id="searchBatchInput" oninput="searchBatch()" placeholder="Type or scan a Batch Number..." class="w-full p-2 border border-slate-300 rounded-md focus:outline-blue-500">
+            <input type="text" id="searchBatchInput" oninput="searchBatch()" placeholder="Type or scan a Batch Number..." class="w-full p-2 border border-slate-300 rounded-md focus:outline-[#F2B429]">
             <div id="searchResult" class="mt-2 hidden"></div>
         </div>
 
         <!-- Recent Logs Table -->
         <div class="pt-4 border-t border-slate-200">
             <div class="flex justify-between items-center mb-2">
-                <h2 class="text-md font-semibold text-slate-700">Recent Movements</h2>
+                <h2 class="text-md font-semibold text-[#0B1B33]">Recent Movements</h2>
                 <div class="space-x-1">
                     <button onclick="exportPDF()" class="text-xs bg-red-600 hover:bg-red-700 text-white font-medium px-2.5 py-1 rounded shadow transition">📄 Export PDF</button>
                     <button onclick="exportCSV()" class="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded text-slate-700">CSV</button>
@@ -774,7 +786,7 @@
             tbody.innerHTML = '';
             const typeStyles = {
                 'Entry': 'bg-emerald-100 text-emerald-700',
-                'Move': 'bg-blue-100 text-blue-700',
+                'Move': 'bg-[#0B1B33]/10 text-[#0B1B33]',
                 'Release': 'bg-rose-100 text-rose-700'
             };
             logs.forEach(log => {
@@ -854,16 +866,87 @@
         }
 
         // ---------- Export ----------
-        function exportPDF() {
+        // Reuses the already-loaded header <img> (same-origin, so canvas isn't tainted)
+        // to get the logo as a data URL for the PDF watermark, without an extra fetch.
+        function getLogoInfo() {
+            return new Promise((resolve) => {
+                const img = document.getElementById('companyLogo');
+                if (!img || img.tagName !== 'IMG' || !img.complete || !img.naturalWidth) {
+                    resolve(null);
+                    return;
+                }
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    canvas.getContext('2d').drawImage(img, 0, 0);
+                    resolve({
+                        dataUrl: canvas.toDataURL('image/png'),
+                        aspect: img.naturalHeight / img.naturalWidth
+                    });
+                } catch (e) {
+                    resolve(null); // logo not loaded yet / blocked — PDF still works, just without the watermark
+                }
+            });
+        }
+
+        async function exportPDF() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
-            doc.text('Corridor Container Tracker - Movement Log', 14, 15);
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const NAVY = [11, 27, 51];      // #0B1B33
+            const GOLD = [242, 180, 41];     // #F2B429
+            const CREAM = [245, 243, 239];   // #F5F3EF
+
+            // Explicit white page background
+            doc.setFillColor(255, 255, 255);
+            doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+            // Faint centered watermark logo
+            const logo = await getLogoInfo();
+            if (logo) {
+                const wmWidth = pageWidth * 0.65;
+                const wmHeight = wmWidth * logo.aspect;
+                try {
+                    doc.saveGraphicsState();
+                    doc.setGState(new doc.GState({ opacity: 0.06 }));
+                    doc.addImage(logo.dataUrl, 'PNG', (pageWidth - wmWidth) / 2, (pageHeight - wmHeight) / 2, wmWidth, wmHeight);
+                    doc.restoreGraphicsState();
+                } catch (e) {
+                    console.warn('Watermark skipped:', e);
+                }
+            }
+
+            // Brand header
+            doc.setFont(undefined, 'bold');
+            doc.setFontSize(16);
+            doc.setTextColor(...NAVY);
+            doc.text('EVA PHARMA', 14, 15);
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(90, 90, 90);
+            doc.text('Corridor Container Tracker — Movement Log', 14, 21);
+            doc.setDrawColor(...GOLD);
+            doc.setLineWidth(0.8);
+            doc.line(14, 24, pageWidth - 14, 24);
+
             doc.autoTable({
-                startY: 20,
-                styles: { fontSize: 8 },
+                startY: 29,
+                styles: { fontSize: 8, textColor: [30, 41, 59] },
+                headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: CREAM },
                 head: [['Type', 'Batch', 'Container', 'Zone', 'Pallet', 'Details', 'Time']],
-                body: logs.map(l => [l.type, l.batch, l.container, l.zone, l.palletNumber, l.details, l.time])
+                body: logs.map(l => [l.type, l.batch, l.container, l.zone, l.palletNumber, l.details, l.time]),
+                didParseCell: function (data) {
+                    if (data.section === 'body' && data.column.index === 0) {
+                        if (data.cell.raw === 'Entry') data.cell.styles.textColor = [4, 120, 87];
+                        else if (data.cell.raw === 'Move') data.cell.styles.textColor = NAVY;
+                        else if (data.cell.raw === 'Release') data.cell.styles.textColor = [190, 18, 60];
+                    }
+                }
             });
+
             doc.save('container_log.pdf');
         }
 
